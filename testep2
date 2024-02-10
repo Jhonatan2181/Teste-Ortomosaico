@@ -1,0 +1,155 @@
+import os
+import cv2
+import numpy as np
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import open3d as o3d
+
+def main(generate_point_cloud=True):
+    # Caminho para a pasta contendo as imagens
+    folder_path = r'C:\Users\Jhona\Desktop\IMAGENS_DRONE'
+
+    # Verificar se o caminho da pasta é válido
+    if not os.path.isdir(folder_path):
+        print(f'O caminho da pasta "{folder_path}" não é válido.')
+        return
+
+    # Listar todos os arquivos na pasta
+    files = os.listdir(folder_path)
+
+    # Verificar se há imagens na pasta
+    if len(files) == 0:
+        print('Nenhuma imagem encontrada na pasta.')
+        return
+
+    # Lista para armazenar as imagens
+    images = []
+
+    # Carregar cada imagem
+    for filename in files:
+        if filename.endswith(('.jpg', '.jpeg', '.png')):
+            # Caminho completo para a imagem
+            image_path = os.path.join(folder_path, filename)
+
+            # Carregar a imagem
+            img = cv2.imread(image_path)
+
+            # Verificar se a imagem foi carregada corretamente
+            if img is None:
+                print(f'Erro ao carregar a imagem {filename}.')
+                continue
+
+            images.append(img)
+
+    # Verificar se há imagens carregadas
+    if len(images) == 0:
+        print('Nenhuma imagem válida encontrada na pasta.')
+        return
+
+    # Calibrar a câmera (usando uma implementação simplificada)
+    intrinsic = o3d.camera.PinholeCameraIntrinsic()
+    intrinsic.set_intrinsics(800, 600, 525, 525, 400, 300)
+
+    if generate_point_cloud:
+        # Verificar se há imagens suficientes para gerar a nuvem de pontos
+        if len(images) < 2:
+            print('É necessário pelo menos duas imagens para gerar a nuvem de pontos.')
+            return
+
+        # Inicializar o detector ORB
+        orb = cv2.ORB_create()
+
+        # Inicializar o matcher de força bruta
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+        # Detectar pontos-chave e calcular descritores para todas as imagens
+        keypoints_list = []
+        descriptors_list = []
+        for img in images:
+            keypoints, descriptors = orb.detectAndCompute(img, None)
+            keypoints_list.append(keypoints)
+            descriptors_list.append(descriptors)
+
+        # Realizar correspondência de características entre as imagens
+        matches_list = []
+        for i in range(len(images) - 1):
+            matches = bf.match(descriptors_list[i], descriptors_list[i + 1])
+            matches = sorted(matches, key=lambda x: x.distance)
+            matches_list.append(matches)
+
+        # Verificar se há correspondências suficientes para gerar a nuvem de pontos
+        if len(matches_list) == 0:
+            print('Não há correspondências suficientes para gerar a nuvem de pontos.')
+            return
+
+        # Exibir as correspondências nas imagens
+        for i, matches in enumerate(matches_list):
+            img_matches = cv2.drawMatches(images[i], keypoints_list[i], images[i + 1], keypoints_list[i + 1], matches[:10], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            cv2.imshow(f'Correspondências entre imagens {i+1} e {i+2}', img_matches)
+            cv2.waitKey(0)  # Aguardar até que uma tecla seja pressionada
+
+        cv2.destroyAllWindows()
+    else:
+        # Estimar as poses das câmeras
+        extrinsics = []
+        for img in images:
+            extrinsics.append(o3d.camera.PinholeCameraParameters.create_from_color(np.eye(4)))
+
+        # Alinhar as imagens
+        aligned_images = align_images(images)
+
+        # Criar ortomosaico
+        orthomosaic = blend_images(aligned_images)
+
+        # Verificar se o ortomosaico foi criado com sucesso
+        if orthomosaic is None:
+            print('Falha ao criar o ortomosaico.')
+            return
+
+        # Salvar o ortomosaico na pasta de destino
+        result_folder = r'C:\Users\Jhona\Desktop\RESULTADO_ORTO'
+        os.makedirs(result_folder, exist_ok=True)
+        result_path = os.path.join(result_folder, 'ortomosaico.png')
+        cv2.imwrite(result_path, orthomosaic)
+
+        # Mostrar o ortomosaico
+        cv2.imshow('Orthomosaic', orthomosaic)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    # Gerar um relatório em PDF com informações sobre o processamento e o RMSE
+    generate_report()
+
+def align_images(images):
+    # Implementar alinhamento das imagens aqui
+    # Aqui você deve adicionar o código para alinhar as imagens
+    return aligned_images
+
+def blend_images(images):
+    # Implementar blendagem das imagens aqui
+    # Aqui você deve adicionar o código para blendagem das imagens
+    return blended_image
+
+def calculate_rmse():
+    # Calcular o RMSE
+    rmse = 0.0
+    # Implementar o cálculo do RMSE
+    return rmse
+
+def generate_report():
+    # Criar um novo arquivo PDF
+    c = canvas.Canvas("relatorio_ortomosaico.pdf", pagesize=letter)
+
+    # Adicionar informações sobre o processamento do ortomosaico
+    c.drawString(100, 700, "Relatório de Processamento do Ortomosaico")
+    # Adicionar outras informações relevantes...
+
+    # Calcular e adicionar o RMSE ao relatório
+    rmse = calculate_rmse()
+    c.drawString(100, 650, f"Erro Quadrático Médio da Raiz (RMSE): {rmse}")
+
+    # Salvar o arquivo PDF
+    c.save()
+
+if __name__ == "__main__":
+    main(generate_point_cloud=True)  # Defina como True se desejar gerar nuvens de pontos
